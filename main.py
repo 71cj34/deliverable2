@@ -100,6 +100,37 @@ def read_and_graph_serial_data():
             if len(pcd.points) > 0:
                 print(f"Loaded {len(pcd.points)} points. Visualizing...")
                 o3d.visualization.draw_geometries([pcd])
+
+                # Create lineset to connect the points
+                points = np.asarray(pcd.points)
+                num_points = len(points)
+                num_slices = num_points // STEPS_PER_360
+
+                lines = []
+
+                # Connect points within each slice (circular pattern)
+                for slice_idx in range(num_slices):
+                    base_idx = slice_idx * STEPS_PER_360
+                    for i in range(STEPS_PER_360):
+                        # Connect to next point in same slice
+                        next_i = (i + 1) % STEPS_PER_360
+                        lines.append([base_idx + i, base_idx + next_i])
+
+                # Connect points between slices (same angle, adjacent X)
+                for slice_idx in range(num_slices - 1):
+                    base_idx = slice_idx * STEPS_PER_360
+                    next_base_idx = (slice_idx + 1) * STEPS_PER_360
+                    for i in range(STEPS_PER_360):
+                        lines.append([base_idx + i, next_base_idx + i])
+
+                # Create LineSet
+                line_set = o3d.geometry.LineSet(
+                    points=o3d.utility.Vector3dVector(points),
+                    lines=o3d.utility.Vector2iVector(lines)
+                )
+
+                # Visualize both points and lines
+                o3d.visualization.draw_geometries([pcd, line_set])
             else:
                 print("No points to visualize.")
         except Exception as e:
