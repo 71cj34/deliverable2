@@ -4,12 +4,10 @@ import numpy as np
 import math
 import time
 
-# Configure your serial port here
-SERIAL_PORT = 'COM4'  # Change to your specific COM port
-BAUD_RATE = 115200    # Ensure this matches your UART_Init() in C
+SERIAL_PORT = 'COM4'  # CHANGE TO SPECIFIC COM PORT
+BAUD_RATE = 115200    # MAKE SURE THIS MATCHES VALUE IN UART_INIT
 X_MULT = 20
 
-# Timeout configuration
 MEASUREMENT_TIMEOUT = 3.0  # Seconds to wait for next measurement before considering slice complete
 
 def graph_slice(distances, x_offset, filename="all_measurements.xyz"):
@@ -24,15 +22,15 @@ def graph_slice(distances, x_offset, filename="all_measurements.xyz"):
     Formulas:
     y = distance * cos(angle)
     z = distance * sin(angle)
-    
+
     Assumes measurements are evenly spaced around 360 degrees.
     """
     num_points = len(distances)
     if num_points == 0:
         return
-        
+
     degrees_per_point = 360.0 / num_points
-    
+
     with open(filename, "a") as f:
         for i, dist in enumerate(distances):
             angle_deg = i * degrees_per_point
@@ -58,7 +56,7 @@ def read_and_graph_serial_data():
             # Check if we've timed out waiting for the next measurement
             if sensor_init_successful and all_measurements and (time.time() - last_measurement_time) > MEASUREMENT_TIMEOUT:
                 print(f"Slice {current_slice} complete (timeout after {MEASUREMENT_TIMEOUT}s). Saving {len(all_measurements)} points...")
-                
+
                 # Save this slice's data to file
                 graph_slice(all_measurements, current_slice)
 
@@ -74,7 +72,7 @@ def read_and_graph_serial_data():
                     line = ser.readline().decode('utf-8').rstrip()
                 except UnicodeDecodeError:
                     continue
-                
+
                 if not line:
                     continue
 
@@ -98,7 +96,7 @@ def read_and_graph_serial_data():
                     except ValueError:
                         # Not a float, so it's not a distance measurement
                         pass
-            
+
             # Small sleep to prevent CPU spinning
             time.sleep(0.001)
 
