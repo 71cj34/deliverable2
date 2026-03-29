@@ -2,15 +2,15 @@ import serial
 import open3d as o3d
 import numpy as np
 import math
+import time
 
 # Configure your serial port here
 SERIAL_PORT = 'COM4'  # Change to your specific COM port
 BAUD_RATE = 115200    # Ensure this matches your UART_Init() in C
 X_MULT = 20
 
-# Configuration for the scan
-DEGREES_PER_STEP = 11.25  # Adjust based on your stepper motor configuration
-STEPS_PER_360 = int(360 / DEGREES_PER_STEP)  # Number of measurements per full rotation
+# Timeout configuration
+MEASUREMENT_TIMEOUT = 3.0  # Seconds to wait for next measurement before considering slice complete
 
 def graph_slice(distances, x_offset, filename="all_measurements.xyz"):
     """
@@ -24,10 +24,18 @@ def graph_slice(distances, x_offset, filename="all_measurements.xyz"):
     Formulas:
     y = distance * cos(angle)
     z = distance * sin(angle)
+    
+    Assumes measurements are evenly spaced around 360 degrees.
     """
+    num_points = len(distances)
+    if num_points == 0:
+        return
+        
+    degrees_per_point = 360.0 / num_points
+    
     with open(filename, "a") as f:
         for i, dist in enumerate(distances):
-            angle_deg = i * DEGREES_PER_STEP
+            angle_deg = i * degrees_per_point
             angle_rad = math.radians(angle_deg)
             y = dist * math.cos(angle_rad)
             z = dist * math.sin(angle_rad)
@@ -36,18 +44,37 @@ def graph_slice(distances, x_offset, filename="all_measurements.xyz"):
 def read_and_graph_serial_data():
     try:
         # Open serial connection
-        ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
+        ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=0.1)  # Short timeout for polling
         print(f"Connected to {SERIAL_PORT} at {BAUD_RATE} baud.")
 
         all_measurements = []
         sensor_init_successful = False
         current_slice = 0  # X-axis offset (manual displacement)
+        last_measurement_time = time.time()
 
         print("Waiting for sensor initialization...")
 
         while True:
+            # Check if we've timed out waiting for the next measurement
+            if sensor_init_successful and all_measurements and (time.time() - last_measurement_time) > MEASUREMENT_TIMEOUT:
+                print(f"Slice {current_slice} complete (timeout after {MEASUREMENT_TIMEOUT}s). Saving {len(all_measurements)} points...")
+                
+                # Save this slice's data to file
+                graph_slice(all_measurements, current_slice)
+
+                # Reset for next slice
+                all_measurements = []
+                current_slice += 1
+                sensor_init_successful = False  # Wait for next "SensorInit Successful"
+                print(f"Ready for slice {current_slice}. Waiting for sensor initialization...")
+
+            # Try to read from serial
             if ser.in_waiting > 0:
-                line = ser.readline().decode('utf-8').rstrip()
+                try:
+                    line = ser.readline().decode('utf-8').rstrip()
+                except UnicodeDecodeError:
+                    continue
+                
                 if not line:
                     continue
 
@@ -55,6 +82,8 @@ def read_and_graph_serial_data():
 
                 if "SensorInit Successful" in line:
                     sensor_init_successful = True
+                    all_measurements = []  # Clear any previous measurements
+                    last_measurement_time = time.time()
                     print(f"Sensor initialization successful. Starting slice {current_slice}...")
                     continue
 
@@ -63,26 +92,15 @@ def read_and_graph_serial_data():
                         # Attempt to convert the line to a float
                         distance = float(line)
                         all_measurements.append(distance)
-                        print(f"Slice {current_slice}: Captured measurement #{len(all_measurements)}/{STEPS_PER_360}: {distance}mm")
-
-                        # Check if we've completed a full 360° rotation
-                        if len(all_measurements) >= STEPS_PER_360:
-                            print(f"Slice {current_slice} complete. Saving {len(all_measurements)} points...")
-
-                            # Save this slice's data to file
-                            graph_slice(all_measurements, current_slice)
-
-                            # Reset for next slice
-                            all_measurements = []
-                            current_slice += 1
-                            print(f"Ready for slice {current_slice}. Move to next X position and press Enter to continue...")
-
-                            # Optional: wait for user input before next slice
-                            # input()  # Uncomment if you want manual confirmation between slices
+                        last_measurement_time = time.time()
+                        print(f"Slice {current_slice}: Captured measurement #{len(all_measurements)}: {distance}mm")
 
                     except ValueError:
                         # Not a float, so it's not a distance measurement
                         pass
+            
+            # Small sleep to prevent CPU spinning
+            time.sleep(0.001)
 
     except serial.SerialException as e:
         print(f"Error: {e}")
@@ -100,37 +118,6 @@ def read_and_graph_serial_data():
             if len(pcd.points) > 0:
                 print(f"Loaded {len(pcd.points)} points. Visualizing...")
                 o3d.visualization.draw_geometries([pcd])
-
-                # Create lineset to connect the points
-                points = np.asarray(pcd.points)
-                num_points = len(points)
-                num_slices = num_points // STEPS_PER_360
-
-                lines = []
-
-                # Connect points within each slice (circular pattern)
-                for slice_idx in range(num_slices):
-                    base_idx = slice_idx * STEPS_PER_360
-                    for i in range(STEPS_PER_360):
-                        # Connect to next point in same slice
-                        next_i = (i + 1) % STEPS_PER_360
-                        lines.append([base_idx + i, base_idx + next_i])
-
-                # Connect points between slices (same angle, adjacent X)
-                for slice_idx in range(num_slices - 1):
-                    base_idx = slice_idx * STEPS_PER_360
-                    next_base_idx = (slice_idx + 1) * STEPS_PER_360
-                    for i in range(STEPS_PER_360):
-                        lines.append([base_idx + i, next_base_idx + i])
-
-                # Create LineSet
-                line_set = o3d.geometry.LineSet(
-                    points=o3d.utility.Vector3dVector(points),
-                    lines=o3d.utility.Vector2iVector(lines)
-                )
-
-                # Visualize both points and lines
-                o3d.visualization.draw_geometries([pcd, line_set])
             else:
                 print("No points to visualize.")
         except Exception as e:
