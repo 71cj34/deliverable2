@@ -6,7 +6,7 @@ import time
 
 SERIAL_PORT = 'COM4'  # CHANGE TO SPECIFIC COM PORT
 BAUD_RATE = 115200    # MAKE SURE THIS MATCHES VALUE IN UART_INIT
-X_MULT = 20
+X_MULT = 100
 
 MEASUREMENT_TIMEOUT = 3.0  # Seconds to wait for next measurement before considering slice complete
 
