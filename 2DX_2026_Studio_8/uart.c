@@ -14,6 +14,10 @@ void UART_Init(void) {
 	while((SYSCTL_PRUART_R&SYSCTL_PRUART_R0) == 0){};
 		
   UART0_CTL_R &= ~UART_CTL_UARTEN;      // disable UART
+		// CALC FOR BAUD AT 26mhz:
+		// divisor = 26m/(16*115200) = 14.105
+		// fbrd = 0.105 *64 = 6.72
+		// BUT THIS USES THE PIOSC NOT MAIN CLOCK SO THIS DOESNT MATTER!!!! :DDDDD
   UART0_IBRD_R = 8;                     // IBRD = int(16,000,000 / (16 * 115,200)) = int(8.681)
   UART0_FBRD_R = 44;                    // FBRD = round(0.6806 * 64) = 44
                                         // 8 bit word length (no parity bits, one stop bit, FIFOs)

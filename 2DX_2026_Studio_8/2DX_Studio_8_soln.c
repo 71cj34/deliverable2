@@ -12,6 +12,11 @@
 
 #include "VL53L1X_api.h"
 
+// CONNECT OSCILLOSCOPE ON PM4 FOR CLOCK DEMO
+// CHANGELOG FOR CLOCK CYCLE STUFF:
+// changed systick to use 26 mult
+// changed i2c clock speed
+// changed timer3_init
 
 #define I2C_MCS_ACK 0x00000008 // Data Acknowledge Enable
 #define I2C_MCS_DATACK 0x00000008 // Acknowledge Data
@@ -39,7 +44,7 @@ void I2C_Init(void) {
     //  GPIO_PORTB_PCTL_R = (GPIO_PORTB_PCTL_R&0xFFFF00FF)+0x00003300;
     GPIO_PORTB_PCTL_R = (GPIO_PORTB_PCTL_R & 0xFFFF00FF) + 0x00002200; //TED
     I2C0_MCR_R = I2C_MCR_MFE; // 9) master function enable
-    I2C0_MTPR_R = 0b0000000000000101000000000111011; // 8) configure for 100 kbps clock (added 8 clocks of glitch suppression ~50ns)
+			I2C0_MTPR_R = 13; // 8) configure for 100 kbps clock (added 8 clocks of glitch suppression ~50ns)      // CHANGED: TPR = (clk/(2*(delay+1)*100000)) - 1, (26m/(2*10*100000)) - 1 ~= 13
     //    I2C0_MTPR_R = 0x3B;                                        						// 8) configure for 100 kbps clock
 
 }
@@ -63,10 +68,10 @@ void PortM_Init(void) {
     SYSCTL_RCGCGPIO_R |= SYSCTL_RCGCGPIO_R11; // Activate the clock for Port E
     while ((SYSCTL_PRGPIO_R & SYSCTL_PRGPIO_R11) == 0) {}; // Allow time for clock to stabilize
 
-    GPIO_PORTM_DIR_R = 0b00001111; // Enable PE0 and PE1 as outputs
-    GPIO_PORTM_AFSEL_R &= ~0x0F;
-    GPIO_PORTM_DEN_R = 0b00001111; // Enable PE0 and PE1 as digital pins
-    GPIO_PORTM_AMSEL_R &= ~0x0F;
+    GPIO_PORTM_DIR_R = 0b00011111; // Enable PE0 and PE1 as outputs
+    GPIO_PORTM_AFSEL_R &= ~0b00011111;
+    GPIO_PORTM_DEN_R = 0b00011111; // Enable PE0 and PE1 as digital pins
+    GPIO_PORTM_AMSEL_R &= ~0b00011111;
     return;
 }
 
@@ -84,7 +89,7 @@ void VL53L1X_XSHUT(void) {
 
 static int step_index = 0; // Persistent variable
 static int le = 0;
-static int dir = 0;
+static int dir = 1;
 void step_motor(int dir) {
     int seq[4] = {0b0011, 0b0110, 0b1100, 0b1001};
     
@@ -113,7 +118,7 @@ void WaitForInt(void)
 
 void Timer3_Init(void){
 
-	uint32_t period = 700000;						// 32-bit value in 1us increments
+	uint32_t period = 820000;						// 32-bit value in 1us increments
 	
 	// Step 1: Activate timer
 	SYSCTL_RCGCTIMER_R = 0x08;				// (Step 1)Activate timer 
@@ -125,7 +130,7 @@ void Timer3_Init(void){
 	TIMER3_CFG_R = 0x0;						// (Step 2-2) Configure for 32-bit timer mode   
 	TIMER3_TAMR_R = 0x2;						// (Step 2-3) Configure for periodic mode   
 	TIMER3_TAPR_R = 0x0;						// (Step 2-4) Set prescale value to 0; i.e. Timer3 works with Maximum Freq = bus clock freq (120MHz)  
-	TIMER3_TAILR_R = (period*120)-1; 			// (Step 2-5) Reload value (we multiply the period by 120 to match the units of 1 us)  
+	TIMER3_TAILR_R = (period*26)-1; 			// (Step 2-5) Reload value (we multiply the period by 26 to match the units of 1 us)  
 	TIMER3_ICR_R = 0x1;							// (Step 2-6) Acknowledge the timeout interrupt (Clear timeout flag of Timer3)
 	TIMER3_IMR_R = 0x1;						// (Step 2-7) Arm timeout interrupt   
 	
@@ -140,6 +145,22 @@ void Timer3_Init(void){
 	// Step 4: Enable the Timer to start counting
 	TIMER3_CTL_R = 0x1;						// Enable Timer3
 } 
+
+void PortJ_Init(void) {
+    SYSCTL_RCGCGPIO_R |= SYSCTL_RCGCGPIO_R8; // Activate the clock for Port M
+    while ((SYSCTL_PRGPIO_R & SYSCTL_PRGPIO_R8) == 0) {}; // Allow time for clock to stabilize
+
+    GPIO_PORTJ_LOCK_R = 0x4C4F434B;
+    GPIO_PORTJ_CR_R |= 0b011;
+    GPIO_PORTJ_LOCK_R = 0;
+
+    GPIO_PORTJ_DIR_R = 0b00000000; // Enable PM0 and PM1 as inputs
+    GPIO_PORTJ_DEN_R = 0b00000011; // Enable PM0 and PM1 as digital pins
+
+    // pull down resistors for active-high buttons
+    GPIO_PORTJ_PUR_R = 0b00000011;
+    return;
+}
 
 //*********************************************************************************************************
 //*********************************************************************************************************
@@ -174,20 +195,18 @@ void TIMER3A_IRQHandler(void){
 
 }
 
-void PortJ_Init(void) {
-    SYSCTL_RCGCGPIO_R |= SYSCTL_RCGCGPIO_R8; // Activate the clock for Port M
-    while ((SYSCTL_PRGPIO_R & SYSCTL_PRGPIO_R8) == 0) {}; // Allow time for clock to stabilize
+void MeasureOnce(void) {
+	        status = VL53L1X_StartRanging(dev);   // 4 This function has to be called to enable the ranging
 
-    GPIO_PORTJ_LOCK_R = 0x4C4F434B;
-    GPIO_PORTJ_CR_R |= 0b011;
-    GPIO_PORTJ_LOCK_R = 0;
+        while (le < 2048) {
+					if (le % 512 == 0) {
+								FlashLED3(1);
+					}
+					step_motor(dir);
+					SysTick_Wait10us(1000);
+				}
 
-    GPIO_PORTJ_DIR_R = 0b00000000; // Enable PM0 and PM1 as inputs
-    GPIO_PORTJ_DEN_R = 0b00000011; // Enable PM0 and PM1 as digital pins
-
-    // pull down resistors for active-high buttons
-    GPIO_PORTJ_PUR_R = 0b00000011;
-    return;
+        VL53L1X_StopRanging(dev);
 }
 
 int main(void) {
@@ -219,6 +238,7 @@ int main(void) {
     UART_Init();
 		PortM_Init();
 		Timer3_Init();
+		PortJ_Init();
 		
     // hello world!
 //    //UART_printf("Program Begins\r\n");
@@ -286,18 +306,22 @@ int main(void) {
     //  status = VL53L1X_SetInterMeasurementInMs(dev, 200); /* in ms, IM must be > = TB */
 
     ///////////////////// MILESTONE 2 - UNCOMMENT THIS TO DO M2!!!!
-
+		int pressed = 0;
+		int last = 0;
     if (1) {
-        status = VL53L1X_StartRanging(dev);   // 4 This function has to be called to enable the ranging
-
-        while (le < 2048) {
-					if (le % 512 == 0) {
-								FlashLED3(1);
-					}
-					step_motor(dir);
-					SysTick_Wait10us(1000);
-				}
-
-        VL53L1X_StopRanging(dev);
-    }
+			pressed = 0;
+			int current = GPIO_PORTJ_DATA_R;
+			pressed = current & (~last);
+			last = current;
+			
+			dir ^= 1;
+			if (pressed & 0b01) {
+				MeasureOnce();
+			}
+    } else {			
+			while (1) {
+				GPIO_PORTM_DATA_R ^= (1 << 4);
+				SysTick_Wait(100000);
+		}
+		}
 }

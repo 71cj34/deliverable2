@@ -107,10 +107,10 @@ void PLL_Init(void){ uint32_t timeout;
   //    that is not an integer divisor of 480 MHz, change this section.
   //    fVC0 = (fXTAL/(Q + 1)/(N + 1))*(MINT + (MFRAC/1,024))
   //    fVCO = 480,000,000 Hz (arbitrary, but presumably as small as needed)
-#define FXTAL 25000000  // fixed, this crystal is soldered to the Connected Launchpad
+#define FXTAL 25000000  // fixed, this crystal is soldered to the Connected Launchpad																	// CHANGES HERE!!!!
 #define Q            0
-#define N            4  // chosen for reference frequency within 4 to 30 MHz
-#define MINT        96  // 480,000,000 = (25,000,000/(0 + 1)/(4 + 1))*(96 + (0/1,024))
+#define N            24  // chosen for reference frequency within 4 to 30 MHz																					// 4 -> 24 so 25/(24+1) ref freq is 1 Mhz
+#define MINT        312  // 480,000,000 = (25,000,000/(0 + 1)/(4 + 1))*(96 + (0/1,024))																// psysdiv (in .h) -> 11 so 312/(11+1) = 26MHz
 #define MFRAC        0  // zero to reduce jitter
   //    SysClk = fVCO / (PSYSDIV + 1)
 #define SYSCLK (FXTAL/(Q+1)/(N+1))*(MINT+MFRAC/1024)/(PSYSDIV+1)
