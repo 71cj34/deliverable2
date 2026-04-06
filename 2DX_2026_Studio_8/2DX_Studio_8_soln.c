@@ -65,8 +65,8 @@ void PortG_Init(void) {
 }
 
 void PortM_Init(void) {
-    SYSCTL_RCGCGPIO_R |= SYSCTL_RCGCGPIO_R11; // Activate the clock for Port E
-    while ((SYSCTL_PRGPIO_R & SYSCTL_PRGPIO_R11) == 0) {}; // Allow time for clock to stabilize
+    SYSCTL_RCGCGPIO_R |= SYSCTL_RCGCGPIO_R11; // activate clock for Port N
+	while ((SYSCTL_PRGPIO_R & SYSCTL_PRGPIO_R11) == 0) {}; // Allow time for clock to stabilize
 
     GPIO_PORTM_DIR_R = 0b00011111; // Enable PE0 and PE1 as outputs
     GPIO_PORTM_AFSEL_R &= ~0b00011111;
@@ -89,14 +89,13 @@ void VL53L1X_XSHUT(void) {
 
 static int step_index = 0; // Persistent variable
 static int le = 0;
-static int dir = 1;
 void step_motor(int dir) {
     int seq[4] = {0b0011, 0b0110, 0b1100, 0b1001};
-    
+
     // Perform only one step
     GPIO_PORTM_DATA_R = seq[step_index % 4];
 		le += 1;
-    
+
     // Increment or decrement index
     if (dir == 0) step_index = (step_index == 0) ? 3 : step_index - 1;
     else step_index = (step_index + 1) % 4;
@@ -118,33 +117,28 @@ void WaitForInt(void)
 
 void Timer3_Init(void){
 
-	uint32_t period = 820000;						// 32-bit value in 1us increments
-	
+	uint32_t period = 800000;						// 32-bit value in 1us increments
+
 	// Step 1: Activate timer
-	SYSCTL_RCGCTIMER_R = 0x08;				// (Step 1)Activate timer 
+	SYSCTL_RCGCTIMER_R = 0x08;				// (Step 1)Activate timer
 	SysTick_Wait10ms(1);							// Wait for the timer module to turn on
-	
-	
+
+
 	// Step 2: Arm and Configure Timer Module
 	TIMER3_CTL_R = 0x0;						// (Step 2-1) Disable Timer3 during setup (Timer stops counting)
-	TIMER3_CFG_R = 0x0;						// (Step 2-2) Configure for 32-bit timer mode   
-	TIMER3_TAMR_R = 0x2;						// (Step 2-3) Configure for periodic mode   
-	TIMER3_TAPR_R = 0x0;						// (Step 2-4) Set prescale value to 0; i.e. Timer3 works with Maximum Freq = bus clock freq (120MHz)  
-	TIMER3_TAILR_R = (period*26)-1; 			// (Step 2-5) Reload value (we multiply the period by 26 to match the units of 1 us)  
+	TIMER3_CFG_R = 0x0;						// (Step 2-2) Configure for 32-bit timer mode
+	TIMER3_TAMR_R = 0x2;						// (Step 2-3) Configure for periodic mode
+	TIMER3_TAPR_R = 0x0;						// (Step 2-4) Set prescale value to 0; i.e. Timer3 works with Maximum Freq = bus clock freq (120MHz)
+	TIMER3_TAILR_R = (period*26)-1; 			// (Step 2-5) Reload value (we multiply the period by 26 to match the units of 1 us)
 	TIMER3_ICR_R = 0x1;							// (Step 2-6) Acknowledge the timeout interrupt (Clear timeout flag of Timer3)
-	TIMER3_IMR_R = 0x1;						// (Step 2-7) Arm timeout interrupt   
-	
-	
+	TIMER3_IMR_R = 0x1;						// (Step 2-7) Arm timeout interrupt
+
+
 	// Step 3: Enable Interrupt at Processor side
-	NVIC_EN1_R = 0x00000008;					// Enable IRQ 35 in NVIC 
-	NVIC_PRI8_R = 0x40000000;					// Set Interrupt Priority to 2 
-																
+	NVIC_EN1_R = 0x00000008;					// Enable IRQ 35 in NVIC
+	NVIC_PRI8_R = 0x40000000;					// Set Interrupt Priority to 2
 	EnableInt();									// Global Interrupt Enable
-	
-	
-	// Step 4: Enable the Timer to start counting
-	TIMER3_CTL_R = 0x1;						// Enable Timer3
-} 
+}
 
 void PortJ_Init(void) {
     SYSCTL_RCGCGPIO_R |= SYSCTL_RCGCGPIO_R8; // Activate the clock for Port M
@@ -169,45 +163,73 @@ void PortJ_Init(void) {
 //*********************************************************************************************************
 uint16_t dev = 0x29; //address of the ToF sensor as an I2C slave peripheral
 int status = 0;
+volatile uint8_t trigger_measurement = 0;
 
-void TIMER3A_IRQHandler(void){ 
+void TIMER3A_IRQHandler(void){
 	  TIMER3_ICR_R = 0x01; // Acknowledge Timer0A interrupt
-    
-    uint8_t dataReady = 0;
-    uint16_t distance;
-		FlashLED4(1);
-    
-    // Check if the sensor has finished the previous measurement
-    VL53L1X_CheckForDataReady(dev, &dataReady);
-    
-    if (dataReady) {
-        VL53L1X_GetDistance(dev, &distance);
-        VL53L1X_ClearInterrupt(dev); 
-        
-        // Log it
-        sprintf(printf_buffer, "%u\r\n", distance);
-				FlashLED4(1);
-        UART_printf(printf_buffer);
-        
-        // Trigger the next ranging capture immediately
-        // (If not already running in continuous mode)
-    }
-
+		trigger_measurement = 1;
 }
+
+static int dir = 0;
 
 void MeasureOnce(void) {
-	        status = VL53L1X_StartRanging(dev);   // 4 This function has to be called to enable the ranging
+		TIMER3_CTL_R = 0x0;
+		TIMER3_ICR_R = 0x0;
+    // Clear any stale trigger from previous slice
+    trigger_measurement = 0;
+    
+    status = VL53L1X_StartRanging(dev);   // Start ranging
+    VL53L1X_ClearInterrupt(dev);
+    
+    // Give sensor time to initialize first measurement
+    SysTick_Wait10ms(100);
+	
+		TIMER3_CTL_R = 0x01;
+			sprintf(printf_buffer, "Begin Slice %u\r\n", dir);
+						UART_printf(printf_buffer);
+    
+    while (le < 2048) {
+//				uint8_t dataReadyFast = 0;
+//				VL53L1X_CheckForDataReady(dev, &dataReadyFast);
+//			  if (dataReadyFast) FlashLED2(1);
+			
+				// this only gets called every 600ms, above gets called every 10ms
+        if (trigger_measurement) {
+            // Always clear the trigger flag when we enter this block
+            trigger_measurement = 0;
+            
+            uint8_t dataReady = 0;
+            uint16_t distance;
 
-        while (le < 2048) {
-					if (le % 512 == 0) {
-								FlashLED3(1);
-					}
-					step_motor(dir);
-					SysTick_Wait10us(1000);
-				}
+            // Check if the sensor has finished the previous measurement
+            VL53L1X_CheckForDataReady(dev, &dataReady);
 
-        VL53L1X_StopRanging(dev);
+            if (dataReady) {
+                // 1. Read the distance FIRST
+								FlashLED2(1);
+                VL53L1X_GetDistance(dev, &distance);
+                
+                // 2. Clear the interrupt SECOND
+                VL53L1X_ClearInterrupt(dev);
+
+                // Log it
+                sprintf(printf_buffer, "%u\r\n", distance);
+                UART_printf(printf_buffer);
+								FlashLED1(1);
+            }
+        }
+
+        if (le % 512 == 0) {
+            FlashLED3(1);
+        }
+        step_motor(dir);
+        SysTick_Wait10us(1000); // 10ms delay
+    }
+		TIMER3_CTL_R = 0x0;
+    VL53L1X_StopRanging(dev);
+		
 }
+
 
 int main(void) {
     uint8_t byteData, sensorState = 0, myByteArray[10] = {
@@ -239,8 +261,7 @@ int main(void) {
 		PortM_Init();
 		Timer3_Init();
 		PortJ_Init();
-		
-    // hello world!
+
 //    //UART_printf("Program Begins\r\n");
     int mynumber = 1;
     //sprintf(printf_buffer, "2DX ToF Program Studio Code %d\r\n", mynumber);
@@ -294,33 +315,38 @@ int main(void) {
 
     status = VL53L1X_ClearInterrupt(dev);
 
-    // END CUSTOM STUFF MILESTONE 1
-
-    /* 2 Initialize the sensor with the default setting  */
-    status = VL53L1X_SensorInit(dev);
+		status = VL53L1X_SensorInit(dev);    
     Status_Check("SensorInit", status);
 
-    /* 3 Optional functions to be used to change the main ranging parameters according the application requirements to get the best ranging performances */
-    //  status = VL53L1X_SetDistanceMode(dev, 2); /* 1=short, 2=long */
     status = VL53L1X_SetTimingBudgetInMs(dev, 50); /* in ms possible values [20, 50, 100, 200, 500] */
-    //  status = VL53L1X_SetInterMeasurementInMs(dev, 200); /* in ms, IM must be > = TB */
+    status = VL53L1X_SetInterMeasurementInMs(dev, 600); /* in ms, IM must be > = TB */
+		status = VL53L1X_ClearInterrupt(dev);
+		
 
-    ///////////////////// MILESTONE 2 - UNCOMMENT THIS TO DO M2!!!!
-		int pressed = 0;
-		int last = 0;
     if (1) {
-			pressed = 0;
-			int current = GPIO_PORTJ_DATA_R;
-			pressed = current & (~last);
-			last = current;
-			
-			dir ^= 1;
-			if (pressed & 0b01) {
-				MeasureOnce();
-			}
-    } else {			
+
+			int last_state = GPIO_PORTJ_DATA_R & 0x01; // Initial read of PJ0
+			dir += 1;
 			while (1) {
-				GPIO_PORTM_DATA_R ^= (1 << 4);
+        int current_state = GPIO_PORTJ_DATA_R & 0x01;
+        if (last_state == 0x01 && current_state == 0x00) {
+            le = 0;
+            
+            // Reinitialize sensor for each slice
+            status = VL53L1X_SensorInit(dev);
+            SysTick_Wait10ms(50);
+
+            MeasureOnce();
+
+            // dir ^= 1;
+        }
+
+        last_state = current_state; // Update for next iteration
+        SysTick_Wait10ms(2);       // Simple debounce
+			}
+    } else {
+					while (1) {
+				GPIO_PORTM_DATA_R ^= 0b0010000;
 				SysTick_Wait(100000);
 		}
 		}

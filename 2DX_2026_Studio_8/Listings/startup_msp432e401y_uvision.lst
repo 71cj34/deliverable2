@@ -862,9 +862,9 @@ ARM Macro Assembler    Page 14
 Command Line: --debug --xref --diag_suppress=9931,A1950W --cpu=Cortex-M4.fp.sp 
 --depend=.\objects\startup_msp432e401y_uvision.d -o.\objects\startup_msp432e401
 y_uvision.o -I.\RTE\_Target_1 -IC:\Users\jason\AppData\Local\Arm\Packs\ARM\CMSI
-S\6.3.0\CMSIS\Core\Include -IC:\Users\jason\AppData\Local\Arm\Packs\TexasInstru
+S\6.1.0\CMSIS\Core\Include -IC:\Users\jason\AppData\Local\Arm\Packs\TexasInstru
 ments\MSP432E4_DFP\3.2.6\Device\Include --predefine="__EVAL SETA 1" --predefine
-="__UVISION_VERSION SETA 543" --predefine="_RTE_ SETA 1" --predefine="__MSP432E
+="__UVISION_VERSION SETA 542" --predefine="_RTE_ SETA 1" --predefine="__MSP432E
 401Y__ SETA 1" --list=.\listings\startup_msp432e401y_uvision.lst RTE/Device/MSP
 432E401Y/startup_msp432e401y_uvision.s
 

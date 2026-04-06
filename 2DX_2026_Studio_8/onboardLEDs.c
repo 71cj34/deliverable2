@@ -4,7 +4,7 @@
 #include "SysTick.h"
 #include "onboardLEDs.h"
 
-#define DELAY 1
+#define DELAY 8
 
 //Flash D1
 void FlashLED1(int count) {

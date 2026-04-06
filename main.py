@@ -1,14 +1,18 @@
-import serial
-import open3d as o3d
-import numpy as np
 import math
 import time
 
-SERIAL_PORT = 'COM4'  # CHANGE TO SPECIFIC COM PORT
-BAUD_RATE = 115200    # MAKE SURE THIS MATCHES VALUE IN UART_INIT
-X_MULT = 100
+import numpy as np
+import open3d as o3d
+import serial
 
-MEASUREMENT_TIMEOUT = 3.0  # Seconds to wait for next measurement before considering slice complete
+SERIAL_PORT = "COM4"  # CHANGE TO SPECIFIC COM PORT
+BAUD_RATE = 115200  # MAKE SURE THIS MATCHES VALUE IN UART_INIT
+X_MULT = 300
+
+MEASUREMENT_TIMEOUT = (
+    3.0  # Seconds to wait for next measurement before considering slice complete
+)
+
 
 def graph_slice(distances, x_offset, filename="all_measurements.xyz"):
     """
@@ -23,7 +27,7 @@ def graph_slice(distances, x_offset, filename="all_measurements.xyz"):
     y = distance * cos(angle)
     z = distance * sin(angle)
 
-    Assumes measurements are evenly spaced around 360 degrees.
+    Assumes measurements are evenly spaced around 360 degrees!!!!
     """
     num_points = len(distances)
     if num_points == 0:
@@ -37,12 +41,15 @@ def graph_slice(distances, x_offset, filename="all_measurements.xyz"):
             angle_rad = math.radians(angle_deg)
             y = dist * math.cos(angle_rad)
             z = dist * math.sin(angle_rad)
-            f.write(f'{x_offset * X_MULT} {y} {z}\n')
+            f.write(f"{x_offset * X_MULT} {y} {z}\n")
+
 
 def read_and_graph_serial_data():
     try:
         # Open serial connection
-        ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=0.1)  # Short timeout for polling
+        ser = serial.Serial(
+            SERIAL_PORT, BAUD_RATE, timeout=0.1
+        )  # Short timeout for polling
         print(f"Connected to {SERIAL_PORT} at {BAUD_RATE} baud.")
 
         all_measurements = []
@@ -54,8 +61,14 @@ def read_and_graph_serial_data():
 
         while True:
             # Check if we've timed out waiting for the next measurement
-            if sensor_init_successful and all_measurements and (time.time() - last_measurement_time) > MEASUREMENT_TIMEOUT:
-                print(f"Slice {current_slice} complete (timeout after {MEASUREMENT_TIMEOUT}s). Saving {len(all_measurements)} points...")
+            if (
+                sensor_init_successful
+                and all_measurements
+                and (time.time() - last_measurement_time) > MEASUREMENT_TIMEOUT
+            ):
+                print(
+                    f"Slice {current_slice} complete (timeout after {MEASUREMENT_TIMEOUT}s). Saving {len(all_measurements)} points..."
+                )
 
                 # Save this slice's data to file
                 graph_slice(all_measurements, current_slice)
@@ -64,12 +77,14 @@ def read_and_graph_serial_data():
                 all_measurements = []
                 current_slice += 1
                 sensor_init_successful = False  # Wait for next "SensorInit Successful"
-                print(f"Ready for slice {current_slice}. Waiting for sensor initialization...")
+                print(
+                    f"Ready for slice {current_slice}. Waiting for sensor initialization..."
+                )
 
             # Try to read from serial
             if ser.in_waiting > 0:
                 try:
-                    line = ser.readline().decode('utf-8').rstrip()
+                    line = ser.readline().decode("utf-8").rstrip()
                 except UnicodeDecodeError:
                     continue
 
@@ -78,11 +93,13 @@ def read_and_graph_serial_data():
 
                 print(line)
 
-                if "SensorInit Successful" in line:
+                if "Begin Slice" in line:
                     sensor_init_successful = True
                     all_measurements = []  # Clear any previous measurements
                     last_measurement_time = time.time()
-                    print(f"Sensor initialization successful. Starting slice {current_slice}...")
+                    print(
+                        f"Sensor initialization successful. Starting slice {current_slice}..."
+                    )
                     continue
 
                 if sensor_init_successful:
@@ -91,7 +108,9 @@ def read_and_graph_serial_data():
                         distance = float(line)
                         all_measurements.append(distance)
                         last_measurement_time = time.time()
-                        print(f"Slice {current_slice}: Captured measurement #{len(all_measurements)}: {distance}mm")
+                        print(
+                            f"Slice {current_slice}: Captured measurement #{len(all_measurements)}: {distance}mm"
+                        )
 
                     except ValueError:
                         # Not a float, so it's not a distance measurement
@@ -105,7 +124,7 @@ def read_and_graph_serial_data():
     except KeyboardInterrupt:
         print("\nExiting...")
     finally:
-        if 'ser' in locals() and ser.is_open:
+        if "ser" in locals() and ser.is_open:
             ser.close()
 
         # Visualize all accumulated data after program ends
@@ -120,6 +139,7 @@ def read_and_graph_serial_data():
                 print("No points to visualize.")
         except Exception as e:
             print(f"Could not visualize data: {e}")
+
 
 if __name__ == "__main__":
     # Clear the output file at start
